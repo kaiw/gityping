@@ -1,0 +1,632 @@
+import enum
+import inspect
+import io
+import logging
+import types
+import typing
+from pathlib import Path
+
+from gi._gi import (
+    CallableInfo,
+    EnumInfo,
+    FieldInfo,
+    FunctionInfo,
+    InterfaceInfo,
+    ObjectInfo,
+    RegisteredTypeInfo,
+    StructInfo,
+    TypeInfo,
+    TypeTag,
+    UnionInfo,
+    VFuncInfo,
+)
+from gi.module import IntrospectionModule
+from gi.repository import GObject
+
+
+log = logging.getLogger()
+
+
+MODULES = (
+    ('GObject', '2.0'),
+    ('GLib', '2.0'),
+    ('Gdk', '3.0'),
+    ('Gtk', '3.0'),
+    ('Gio', '2.0'),
+    ('GtkSource', '3.0'),
+    ('Pango', '1.0'),
+    ('GdkPixbuf', '2.0'),
+    ('cairo', '1.0'),
+)
+
+
+class GTypeTag(enum.IntEnum):
+    ARRAY = TypeTag.ARRAY
+    BOOLEAN = TypeTag.BOOLEAN
+    DOUBLE = TypeTag.DOUBLE
+    ERROR = TypeTag.ERROR
+    FILENAME = TypeTag.FILENAME
+    FLOAT = TypeTag.FLOAT
+    GHASH = TypeTag.GHASH
+    GLIST = TypeTag.GLIST
+    GSLIST = TypeTag.GSLIST
+    GTYPE = TypeTag.GTYPE
+    INT16 = TypeTag.INT16
+    INT32 = TypeTag.INT32
+    INT64 = TypeTag.INT64
+    INT8 = TypeTag.INT8
+    INTERFACE = TypeTag.INTERFACE
+    UINT16 = TypeTag.UINT16
+    UINT32 = TypeTag.UINT32
+    UINT64 = TypeTag.UINT64
+    UINT8 = TypeTag.UINT8
+    UNICHAR = TypeTag.UNICHAR
+    UTF8 = TypeTag.UTF8
+    VOID = TypeTag.VOID
+
+    @classmethod
+    def from_typeinfo(cls, typeinfo):
+        type_tag = typeinfo.get_tag()
+        return cls(type_tag)
+
+    def as_pytype(self):
+        mapping = {
+            GTypeTag.ARRAY: list,
+            GTypeTag.BOOLEAN: bool,
+            GTypeTag.DOUBLE: float,
+            GTypeTag.ERROR: 'gi.repository.GLib.Error',
+            GTypeTag.FILENAME: str,
+            GTypeTag.FLOAT: float,
+            GTypeTag.GHASH: dict,
+            GTypeTag.GLIST: list,
+            GTypeTag.GSLIST: list,
+            GTypeTag.GTYPE: 'gi.repository.GObject.GType',
+            GTypeTag.INT16: int,
+            GTypeTag.INT32: int,
+            GTypeTag.INT64: int,
+            GTypeTag.INT8: int,
+            # We shouldn't typing.Any here, but currently this occurs
+            # only once in a context in which GTypeTag is used, and
+            # it's not worth the additional introspection complication.
+            GTypeTag.INTERFACE: 'typing.Any',
+            GTypeTag.UINT16: int,
+            GTypeTag.UINT32: int,
+            GTypeTag.UINT64: int,
+            GTypeTag.UINT8: int,
+            GTypeTag.UNICHAR: str,
+            GTypeTag.UTF8: str,
+            GTypeTag.VOID: None,
+        }
+        return mapping[self]
+
+
+ATTR_IGNORE_LIST = [
+    # In (almost?) all cases, this annotation should be on the init
+    'new',
+    # Private!
+    'priv',
+    # TODO: It's possible we can add annotations here, but for now it's
+    # too hard.
+    'widget',
+]
+
+# TODO: Add annotations for gobject properties
+# TODO: Add annotations for gobject signals
+
+
+current_stub_module = None
+current_gi_imports = set()
+
+
+def get_current_module_name():
+    # This basically exists so that you can use functions from a REPL
+    return getattr(current_stub_module, '__name__', 'I_AM_BROKEN')
+
+
+def get_effective_module(module):
+    if module.startswith('gi.overrides'):
+        newmodule = 'gi.repository' + module[len('gi.overrides'):]
+        log.debug(
+            'Rewriting module name from {} to {}'.format(module, newmodule))
+        return newmodule
+    return module
+
+
+def format_cls_name(cls):
+    if isinstance(cls, RegisteredTypeInfo):
+        info = cls
+    else:
+        info = getattr(cls, '__info__', None)
+    if info:
+        if info.get_namespace() == 'GObject' and info.get_name() == 'Object':
+            return 'GObject'
+    return cls.__name__
+
+
+def format_module(cls):
+    module_name = get_effective_module(cls.__module__)
+    cls_name = format_cls_name(cls)
+
+    if module_name == get_current_module_name():
+        return cls_name
+    current_gi_imports.add(module_name)
+    return '{}.{}'.format(module_name, cls_name)
+
+
+def format_gi_class(cls):
+    name = format_cls_name(cls)
+
+    parent_cls = None
+    if hasattr(cls, '__gtype__'):
+        parent_cls = cls.__gtype__.parent.pytype
+
+    if parent_cls:
+        return "class {}({}):".format(
+            name, format_module(parent_cls))
+
+    return "class {}:".format(name)
+
+
+def get_typeinfo(typeinfo: TypeInfo):
+    """Obtain a python-style type annotation for the given TypeInfo
+
+    This is currently only called when handling function arguments and
+    return values. As such, it doesn't handle all possible `TypeInfo`s.
+    """
+
+    # TODO: It would be really nice to not be using the string
+    # syntax for these types, but might be more trouble than it's
+    # worth.
+
+    type_tag = GTypeTag.from_typeinfo(typeinfo)
+
+    if type_tag == GTypeTag.INTERFACE:
+        iface = typeinfo.get_interface()
+
+        # At this point we have an interface. This may be a GObject
+        # subclass with a fundamental GType like a GEnum, or it could
+        # be a full GObject class, or it could be a callback or
+        # similar.
+
+        if isinstance(iface, CallableInfo):
+            signature, preamble = make_signature(iface)
+
+            def format_annotation(annotation):
+                if annotation is None or isinstance(
+                        annotation, inspect.Parameter.empty):
+                    # FIXME: Can we do any better than Any?
+                    return 'typing.Any'
+                if isinstance(annotation, type):
+                    return annotation.__name__
+                # Object and GObject are the same, but normalising here
+                # makes everything nicer
+                if annotation == 'gi.repository.GObject.Object':
+                    annotation = 'gi.repository.GObject.GObject'
+                return annotation
+
+            args = [
+                format_annotation(v.annotation)
+                for v in signature.parameters.values()
+            ]
+            return_type = format_annotation(signature.return_annotation)
+
+            # TODO: I could make this not a string, but is it worth it?
+            return "typing.Callable[[{arg_types}], {return_type}]".format(
+                arg_types=', '.join(a for a in args),
+                return_type=return_type,
+            )
+        elif isinstance(iface, RegisteredTypeInfo):
+            # TODO: The following block attempts to handle missing type
+            # information, but in all cases I've checked, the default
+            # format_module() treatment works just fine. Keeping this
+            # code block in place but disabled until I can confirm.
+            if False and iface.get_g_type() == GObject.TYPE_NONE:
+                # This may be a gpointer, although in at least some
+                # cases the gpointer in question has additional type
+                # annotations; it's unclear what's going on here.
+                return typing.Any
+            return format_module(iface)
+
+    # TODO: This handles basic types, but handling for, lists, hashes,
+    # etc. is at best partial.
+    pytype = type_tag.as_pytype()
+    if pytype == list:
+        # TODO: pygobject removes length parameters associated with
+        # arrays based on extra annotations. We don't yet handle this.
+        if type_tag == TypeTag.ARRAY:
+            # FIXME: We should be able to get the array offset by using
+            # typeinfo.get_array_length(), though the docs aren't clear
+            # on how this is used.
+            log.info("Missing array length argument handling!")
+
+        # This is undocumented, but... appears correct?
+        list_type = get_typeinfo(typeinfo.get_param_type(0))
+        return "typing.List[{list_type}]".format(
+            list_type=format_pytype(list_type))
+
+    if pytype is None and type_tag != GTypeTag.VOID:
+        print("Incomplete tag mapping for {}".format(type_tag))
+
+    return pytype
+
+
+def make_parameter(arg_info):
+    # TODO: We can't do this. The argument list is stateful because of
+    # (at least) array length arguments, so we need to maintain some
+    # state of the type parsing in between everything and return a
+    # reconstucted argument list at the end.
+
+    type_annotation = get_typeinfo(arg_info.get_type())
+
+    if type_annotation is None:
+        type_tag = GTypeTag.from_typeinfo(arg_info.get_type())
+        if type_tag != GTypeTag.VOID:
+            print(
+                "missing type annotation for {} {}; "
+                "built-in annotation was {}".format(
+                    type_tag,
+                    arg_info.get_name(),
+                    getattr(arg_info.get_container(), '__doc__', '')))
+
+    # FIXME: At this point, type_annotation will be the class. For gi
+    # types, this means that it might be from the override module or
+    # similar, and won't have the module stripping that we apply
+    # elsewhere.
+    return inspect.Parameter(
+        arg_info.get_name(),
+        annotation=type_annotation,
+        # TODO: I think this is actually true for gi... maybe?
+        kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+
+
+def details_from_funcinfo(function):
+
+    # TODO: Also handle getters, setters, etc.?
+
+    # FIXME: These try/excepts shouldn't be necessary, but
+    # `is_method()` and `is_constructor` are missing from
+    # `CallableInfo`.
+
+    try:
+        needs_self = isinstance(function, VFuncInfo) or function.is_method()
+    except AttributeError:
+        needs_self = False
+    try:
+        is_static = not needs_self and (
+            function.is_constructor() or function.get_container() is not None)
+    except AttributeError:
+        is_static = False
+
+    # There's no context to determine classmethod vs. staticmethod
+    # here, but sampling a few headers they're all static.
+    preamble = "@staticmethod" if is_static else ""
+
+    parameters = []
+    if needs_self:
+        self_param = inspect.Parameter(
+            'self',
+            kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+        parameters.append(self_param)
+    parameters.extend(make_parameter(a) for a in function.get_arguments())
+
+    return_type = get_typeinfo(function.get_return_type())
+
+    return preamble, parameters, return_type
+
+
+def make_signature(function):
+    if isinstance(function, CallableInfo):
+        preamble, parameters, return_type = details_from_funcinfo(function)
+        signature = inspect.Signature(
+            parameters=parameters,
+            return_annotation=return_type,
+        )
+    elif isinstance(function, types.FunctionType):
+        preamble = ""
+        signature = inspect.signature(function)
+    else:
+        raise NotImplementedError
+    return signature, preamble
+
+
+def format_pytype(pytype):
+    if isinstance(pytype, type):
+        return pytype.__name__
+    return pytype
+
+
+def format_variable(name, value):
+    if inspect.isclass(value):
+        type_str = format_module(value.__class__)
+    else:
+        type_str = type(value).__name__
+    return "{} = ...  # type: {}".format(name, type_str)
+
+
+def format_fieldinfo(attr_name, fieldinfo: FieldInfo):
+    pytype = get_typeinfo(fieldinfo.get_type())
+    return "{} = ...  # type: {}".format(attr_name, format_pytype(pytype))
+
+
+def format_functioninfo(attr_name, func_info):
+    assert isinstance(func_info, (VFuncInfo, FunctionInfo, types.FunctionType))
+
+    try:
+        signature, preamble = make_signature(func_info)
+    except Exception as e:
+        raise ValueError(
+            "couldn't make signature for {}: {}".format(attr_name, e))
+
+    if preamble:
+        preamble += "\n"
+
+    return (
+        "{}"
+        "def {}{}: ...\n"
+    ).format(preamble, attr_name, signature)
+
+
+def sane_getattr(cls, attr_name):
+    # Simple ignore for things we know don't want annotations
+    if attr_name.startswith('__') or attr_name in ATTR_IGNORE_LIST:
+        return
+
+    if not attr_name.isidentifier():
+        print("Invalid identifier {} found; skipping".format(
+            attr_name))
+        return
+
+    return getattr(cls, attr_name)
+
+
+def generate_gobject_stubs(cls, attrs, stub_out):
+    for attr_name in attrs:
+        attr = sane_getattr(cls, attr_name)
+        if not attr:
+            continue
+
+        # Ordering is important here. We need to handle e.g., GFlags
+        # before we fall back to int/str/float.
+        if isinstance(attr, (VFuncInfo, FunctionInfo)):
+            stub_out(format_functioninfo(attr_name, attr))
+        elif isinstance(attr, (GObject.GFlags, GObject.GEnum)):
+            # TODO: unsure here. just annotate as the parent type? This is the
+            # same as below. Do I want this clause for clarity, or what?
+            stub_out(format_variable(attr_name, attr))
+        elif isinstance(attr, (int, str, float)):
+            stub_out(format_variable(attr_name, attr))
+        else:
+            print("unsupported type {} for {}.{}".format(
+                type(attr), format_cls_name(cls), attr_name))
+
+
+def generate_genum_stub(cls, attrs, stub_out):
+
+    # For enums (and flags) we would ideally use the available
+    # get_values() introspection. However, the value names are
+    # remapped (usually just upper-cased) so instead we go with this.
+
+    if cls.__info__.is_flags():
+        expected_values = [int(f) for f in cls.__flags_values__.values()]
+    else:
+        expected_values = cls.__enum_values__.values()
+
+    for attr_name in attrs:
+        attr = sane_getattr(cls, attr_name)
+        if not attr:
+            continue
+
+        if attr_name == 'LEVEL_MASK':
+            # So... here we are.
+            #
+            # Turns out that GFlags that include masks do maxint things
+            # except they're unsigned so when Python tries to convert
+            # them to C-style longs they're too small and... well...
+            #
+            # You'd think that you could catch this OverflowError,
+            # but... you'd be wrong. Don't ask me why; it looks like a
+            # Python bug, but I can't reproduce without pygobject so...
+            #
+            # Look, let's just assume that this is a valid flag.
+            pass
+        else:
+            if not attr_name.isupper() or attr not in expected_values:
+                if isinstance(attr, FunctionInfo):
+                    stub_out(format_functioninfo(attr_name, attr))
+                    continue
+                log.warn(
+                    "Skipping unexpected attribute {} in enum {}".format(
+                        attr_name, cls))
+                continue
+
+        stub_out(format_variable(attr_name, attr))
+
+
+def generate_struct_stub(cls, attrs, stub_out):
+
+    # For wrapped structs, the attrs are property objects, so we don't
+    # have the same introspection data present. Instead, we use some
+    # struct-specific fields + methods introspection.
+    field_map = {f.get_name(): f for f in cls.__info__.get_fields()}
+    method_map = {m.get_name(): m for m in cls.__info__.get_methods()}
+
+    for attr_name in attrs:
+        attr = sane_getattr(cls, attr_name)
+        if not attr:
+            continue
+
+        if attr_name in field_map:
+            stub_out(format_fieldinfo(attr_name, field_map[attr_name]))
+        elif attr_name in method_map:
+            stub_out(format_functioninfo(attr_name, method_map[attr_name]))
+        else:
+            raise NotImplementedError
+
+
+def generate_class_stubs(cls, stub_str):
+    # FIXME: Don't take the stub_str; just make a new one per class and
+    # concatenate them
+
+    log.debug("Generating stubs for {}".format(cls))
+
+    print(file=stub_str)
+
+    # TODO: Investigate additional bases; see handling for ObjectInfo
+    # multiple interfaces in  gi.module.IntrospectionModule.__getattr__
+    print(format_gi_class(cls), file=stub_str)
+
+    attrs = cls.__dict__
+
+    # This trick handles module-level lazy loading for e.g., annotating
+    # the top-level Gdk namespace.
+    if hasattr(cls, '_introspection_module'):
+        for attr in dir(cls):
+            getattr(cls, attr)
+        attrs.update(cls._introspection_module.__dict__)
+    attrs = sorted(attrs)
+
+    def stub_out(stub):
+        for line in stub.splitlines():
+            if line.strip():
+                line = "    {}".format(line).rstrip()
+            print(line, file=stub_str)
+
+    # FIXME: GBoxed doesn't have __info__
+    try:
+        info = cls.__info__
+    except AttributeError:
+        log.error("Introspected class does not have info: {}".format(cls))
+        # FIXME: This is broken for many fundamental types as well
+        generate_gobject_stubs(cls, attrs, stub_out)
+        stub_out("...")
+        return stub_str
+
+    # At this point, everything we should be dealing with is a
+    # RegisteredTypeInfo subclass.
+
+    if isinstance(info, (ObjectInfo, InterfaceInfo)):
+        generate_gobject_stubs(cls, attrs, stub_out)
+    elif isinstance(info, (StructInfo, UnionInfo)):
+        # TODO: Should UnionInfo have different handling?
+        generate_struct_stub(cls, attrs, stub_out)
+    elif isinstance(info, EnumInfo):
+        generate_genum_stub(cls, attrs, stub_out)
+    else:
+        raise NotImplementedError
+
+    stub_out("...")
+    return stub_str
+
+
+def generate_module_stub(module):
+    stub_str = io.StringIO()
+
+    log.debug("Generating module stubs for {}".format(module))
+
+    # FIXME: This is wild. Basically, we need a state object at this point
+    global current_stub_module
+    global current_gi_imports
+    current_stub_module = module
+    # We use typing types in a bunch of places; easier to just add this now
+    current_gi_imports = {'typing'}
+
+    attrs = module.__dict__
+
+    # This trick handles module-level lazy loading for e.g., annotating
+    # the top-level Gdk namespace.
+    if hasattr(module, '_introspection_module'):
+        # This module has overrides.
+        for attr in dir(module):
+            getattr(module, attr)
+        attrs.update(module._introspection_module.__dict__)
+    elif isinstance(module, IntrospectionModule):
+        # This module does not have overrides.
+        for attr in dir(module):
+            getattr(module, attr)
+
+    for attr_name in sorted(module.__dict__):
+        attr = sane_getattr(module, attr_name)
+        if not attr:
+            continue
+
+        # FIXME: there's way too much overlap here with
+        # generate_gobject_stubs; this could be a lot simpler.
+
+        if isinstance(attr, (VFuncInfo, FunctionInfo, types.FunctionType)):
+            print(format_functioninfo(attr_name, attr), file=stub_str)
+
+        elif isinstance(attr, (int, str, float)):
+            print(format_variable(attr_name, attr), file=stub_str)
+
+        elif inspect.isclass(attr):
+            if attr_name.endswith(('Class', 'Private')):
+                log.debug(
+                    'Skipping GObject-style internal class {}'.format(
+                        attr_name))
+                continue
+            print(file=stub_str)
+            generate_class_stubs(attr, stub_str)
+
+        elif isinstance(attr, (GObject.GType)):
+            print(format_variable(attr_name, attr), file=stub_str)
+
+        else:
+            print("unsupported module-level type {} for {}.{}".format(
+                type(attr), module.__name__, attr_name))
+
+    stub_str = "\n".join(
+        "import {}".format(imp) for imp in current_gi_imports
+    ) + "\n" + stub_str.getvalue()
+    return stub_str
+
+
+def ensure_module(stubs_base_path: Path, module) -> Path:
+    *parent, name = module.__name__.split('.')
+    path = stubs_base_path.joinpath(*parent)
+    path.mkdir(parents=True, exist_ok=True)
+
+    current = path
+    while current != stubs_base_path:
+        package_marker = current / '__init__.py'
+        if not package_marker.exists():
+            package_marker.touch()
+        current = current.parent
+    return path / '{}.pyi'.format(name)
+
+
+def write_to_stubs(module, stub_str: str, stubs_base_path: Path):
+    stub_file = ensure_module(stubs_base_path, module)
+    with stub_file.open('w') as f:
+        f.write(stub_str)
+
+
+def get_modules():
+    """Get a dictionary of actual imported modules to annotate
+
+    This can be used interactively like:
+        from gityping import *; globals().update(gimme())
+    """
+    import gi
+    import importlib
+
+    modules = {}
+
+    for name, version in MODULES:
+        gi.require_version(name, version)
+        module = importlib.import_module('gi.repository.{}'.format(name))
+        modules[name] = module
+
+    return modules
+
+
+def main():
+    stub_base = Path('stubs')
+    for module in get_modules().values():
+        stub = generate_module_stub(module)
+        write_to_stubs(module, stub, stub_base)
+
+
+if __name__ == '__main__':
+    main()
