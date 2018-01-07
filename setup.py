@@ -29,7 +29,7 @@ setup(
     install_requires=[],
     entry_points={
         'console_scripts': [
-            'gityping=gityping.gityping:main',
+            'gityping=gityping.main:main',
         ],
     },
 )

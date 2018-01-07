@@ -4,7 +4,6 @@ import io
 import logging
 import types
 import typing
-from pathlib import Path
 
 from gi._gi import (
     CallableInfo,
@@ -25,19 +24,6 @@ from gi.repository import GObject
 
 
 log = logging.getLogger()
-
-
-MODULES = (
-    ('GObject', '2.0'),
-    ('GLib', '2.0'),
-    ('Gdk', '3.0'),
-    ('Gtk', '3.0'),
-    ('Gio', '2.0'),
-    ('GtkSource', '3.0'),
-    ('Pango', '1.0'),
-    ('GdkPixbuf', '2.0'),
-    ('cairo', '1.0'),
-)
 
 
 class GTypeTag(enum.IntEnum):
@@ -580,53 +566,3 @@ def generate_module_stub(module):
         "import {}".format(imp) for imp in current_gi_imports
     ) + "\n" + stub_str.getvalue()
     return stub_str
-
-
-def ensure_module(stubs_base_path: Path, module) -> Path:
-    *parent, name = module.__name__.split('.')
-    path = stubs_base_path.joinpath(*parent)
-    path.mkdir(parents=True, exist_ok=True)
-
-    current = path
-    while current != stubs_base_path:
-        package_marker = current / '__init__.py'
-        if not package_marker.exists():
-            package_marker.touch()
-        current = current.parent
-    return path / '{}.pyi'.format(name)
-
-
-def write_to_stubs(module, stub_str: str, stubs_base_path: Path):
-    stub_file = ensure_module(stubs_base_path, module)
-    with stub_file.open('w') as f:
-        f.write(stub_str)
-
-
-def get_modules():
-    """Get a dictionary of actual imported modules to annotate
-
-    This can be used interactively like:
-        from gityping import *; globals().update(gimme())
-    """
-    import gi
-    import importlib
-
-    modules = {}
-
-    for name, version in MODULES:
-        gi.require_version(name, version)
-        module = importlib.import_module('gi.repository.{}'.format(name))
-        modules[name] = module
-
-    return modules
-
-
-def main():
-    stub_base = Path('stubs')
-    for module in get_modules().values():
-        stub = generate_module_stub(module)
-        write_to_stubs(module, stub, stub_base)
-
-
-if __name__ == '__main__':
-    main()
