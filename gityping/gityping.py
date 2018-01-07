@@ -22,6 +22,8 @@ from gi._gi import (
 from gi.module import IntrospectionModule
 from gi.repository import GObject
 
+from .const import ATTR_IGNORE_LIST
+
 
 log = logging.getLogger()
 
@@ -85,16 +87,6 @@ class GTypeTag(enum.IntEnum):
         }
         return mapping[self]
 
-
-ATTR_IGNORE_LIST = [
-    # In (almost?) all cases, this annotation should be on the init
-    'new',
-    # Private!
-    'priv',
-    # TODO: It's possible we can add annotations here, but for now it's
-    # too hard.
-    'widget',
-]
 
 # TODO: Add annotations for gobject properties
 # TODO: Add annotations for gobject signals
