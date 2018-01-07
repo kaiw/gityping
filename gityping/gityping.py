@@ -555,6 +555,6 @@ def generate_module_stub(module):
                 type(attr), module.__name__, attr_name))
 
     stub_str = "\n".join(
-        "import {}".format(imp) for imp in current_gi_imports
+        "import {}".format(imp) for imp in sorted(current_gi_imports)
     ) + "\n" + stub_str.getvalue()
     return stub_str
