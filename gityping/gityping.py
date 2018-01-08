@@ -359,12 +359,16 @@ def sane_getattr(cls, attr_name):
     return getattr(cls, attr_name)
 
 
-def generate_gobject_stubs(cls, attrs, stub_out):
+def attr_generator(cls, attrs):
     for attr_name in attrs:
         attr = sane_getattr(cls, attr_name)
         if not attr:
             continue
+        yield attr_name, attr
 
+
+def generate_gobject_stubs(cls, attrs, stub_out):
+    for attr_name, attr in attr_generator(cls, attrs):
         # Ordering is important here. We need to handle e.g., GFlags
         # before we fall back to int/str/float.
         if isinstance(attr, (VFuncInfo, FunctionInfo)):
@@ -391,11 +395,7 @@ def generate_genum_stub(cls, attrs, stub_out):
     else:
         expected_values = cls.__enum_values__.values()
 
-    for attr_name in attrs:
-        attr = sane_getattr(cls, attr_name)
-        if not attr:
-            continue
-
+    for attr_name, attr in attr_generator(cls, attrs):
         if attr_name == 'LEVEL_MASK':
             # So... here we are.
             #
@@ -430,11 +430,7 @@ def generate_struct_stub(cls, attrs, stub_out):
     field_map = {f.get_name(): f for f in cls.__info__.get_fields()}
     method_map = {m.get_name(): m for m in cls.__info__.get_methods()}
 
-    for attr_name in attrs:
-        attr = sane_getattr(cls, attr_name)
-        if not attr:
-            continue
-
+    for attr_name, attr in attr_generator(cls, attrs):
         if attr_name in field_map:
             stub_out(format_fieldinfo(attr_name, field_map[attr_name]))
         elif attr_name in method_map:
