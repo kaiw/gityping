@@ -440,7 +440,9 @@ def generate_struct_stub(cls, attrs, stub_out):
         elif attr_name in method_map:
             stub_out(format_functioninfo(attr_name, method_map[attr_name]))
         else:
-            raise NotImplementedError
+            raise NotImplementedError(
+                "Struct {} attribute {} is not in field or method map".format(
+                      cls, attr_name))
 
 
 def generate_class_stubs(cls, stub_str):
