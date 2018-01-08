@@ -1,3 +1,4 @@
+import collections
 import importlib
 from pathlib import Path
 
@@ -33,7 +34,7 @@ def get_modules():
     """
     import gi
 
-    modules = {}
+    modules = collections.OrderedDict()
 
     for name, version in MODULES:
         gi.require_version(name, version)
