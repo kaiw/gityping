@@ -346,25 +346,19 @@ def format_functioninfo(attr_name, func_info):
     ).format(preamble, attr_name, signature)
 
 
-def sane_getattr(cls, attr_name):
-    # Simple ignore for things we know don't want annotations
-    if attr_name.startswith('__') or attr_name in ATTR_IGNORE_LIST:
-        return
-
-    if not attr_name.isidentifier():
-        print("Invalid identifier {} found; skipping".format(
-            attr_name))
-        return
-
-    return getattr(cls, attr_name)
-
-
 def attr_generator(cls, attrs):
     for attr_name in attrs:
-        attr = sane_getattr(cls, attr_name)
-        if not attr:
+
+        # Simple ignore for things we know don't want annotations
+        if attr_name.startswith('__') or attr_name in ATTR_IGNORE_LIST:
             continue
-        yield attr_name, attr
+
+        if not attr_name.isidentifier():
+            print("Invalid identifier {} found; skipping".format(
+                attr_name))
+            continue
+
+        yield attr_name, getattr(cls, attr_name)
 
 
 def generate_gobject_stubs(cls, attrs, stub_out):
