@@ -522,11 +522,9 @@ def generate_module_stub(module):
         for attr in dir(module):
             getattr(module, attr)
 
-    for attr_name in sorted(module.__dict__):
-        attr = sane_getattr(module, attr_name)
-        if not attr:
-            continue
+    attrs = sorted(attrs)
 
+    for attr_name, attr in attr_generator(module, attrs):
         # FIXME: there's way too much overlap here with
         # generate_gobject_stubs; this could be a lot simpler.
 
