@@ -447,15 +447,8 @@ def generate_class_stubs(cls, stub_str):
     # multiple interfaces in  gi.module.IntrospectionModule.__getattr__
     print(format_gi_class(cls), file=stub_str)
 
-    attrs = cls.__dict__
-
-    # This trick handles module-level lazy loading for e.g., annotating
-    # the top-level Gdk namespace.
-    if hasattr(cls, '_introspection_module'):
-        for attr in dir(cls):
-            getattr(cls, attr)
-        attrs.update(cls._introspection_module.__dict__)
-    attrs = sorted(attrs)
+    # Sorting for consistency, but also so we're operating on a list copy
+    attrs = sorted(cls.__dict__.keys())
 
     def stub_out(stub):
         for line in stub.splitlines():
