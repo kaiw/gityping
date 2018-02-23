@@ -527,6 +527,13 @@ def generate_module_stub(module):
                     'Skipping GObject-style internal class {}'.format(
                         attr_name))
                 continue
+
+            if attr.__module__ in ('gi._glib',):
+                log.debug(
+                    'Skipping statically bound class {}'.format(
+                        attr_name))
+                continue
+
             print(file=stub_str)
             generate_class_stubs(attr, stub_str)
 
