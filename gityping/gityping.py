@@ -497,6 +497,12 @@ def generate_module_stub(module):
 
     attrs = module.__dict__
 
+    if not (
+            isinstance(module, IntrospectionModule) or
+            hasattr(module, '_introspection_module')):
+        raise RuntimeError(
+            f'tried to generate a stub for non-introspection module {module}')
+
     # This trick handles module-level lazy loading for e.g., annotating
     # the top-level Gdk namespace.
     if hasattr(module, '_introspection_module'):
