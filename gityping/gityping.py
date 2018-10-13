@@ -435,17 +435,17 @@ def generate_struct_stub(cls, attrs, stub_out):
                       cls, attr_name))
 
 
-def generate_class_stubs(cls, stub_str):
+def generate_class_stubs(module, cls):
     # FIXME: Don't take the stub_str; just make a new one per class and
     # concatenate them
 
     log.debug("Generating stubs for {}".format(cls))
 
-    print(file=stub_str)
+    stub_lines = ['']
 
     # TODO: Investigate additional bases; see handling for ObjectInfo
     # multiple interfaces in  gi.module.IntrospectionModule.__getattr__
-    print(format_gi_class(cls), file=stub_str)
+    stub_lines.append(format_gi_class(cls))
 
     # Sorting for consistency, but also so we're operating on a list copy
     attrs = sorted(cls.__dict__.keys())
@@ -454,7 +454,7 @@ def generate_class_stubs(cls, stub_str):
         for line in stub.splitlines():
             if line.strip():
                 line = "    {}".format(line).rstrip()
-            print(line, file=stub_str)
+            stub_lines.append(line)
 
     # FIXME: GBoxed doesn't have __info__
     try:
@@ -464,7 +464,7 @@ def generate_class_stubs(cls, stub_str):
         # FIXME: This is broken for many fundamental types as well
         generate_gobject_stubs(cls, attrs, stub_out)
         stub_out("...")
-        return stub_str
+        return stub_lines
 
     # At this point, everything we should be dealing with is a
     # RegisteredTypeInfo subclass.
@@ -480,7 +480,7 @@ def generate_class_stubs(cls, stub_str):
         raise NotImplementedError
 
     stub_out("...")
-    return stub_str
+    return stub_lines
 
 
 def generate_module_stub(module):
@@ -511,15 +511,17 @@ def generate_module_stub(module):
 
     attrs = sorted(attrs)
 
+    attr_stubs = []
+
     for attr_name, attr in attr_generator(module, attrs):
         # FIXME: there's way too much overlap here with
         # generate_gobject_stubs; this could be a lot simpler.
 
         if isinstance(attr, (VFuncInfo, FunctionInfo, types.FunctionType)):
-            print(format_functioninfo(attr_name, attr), file=stub_str)
+            attr_stubs.append(format_functioninfo(attr_name, attr))
 
         elif isinstance(attr, (int, str, float)):
-            print(format_variable(attr_name, attr), file=stub_str)
+            attr_stubs.append(format_variable(attr_name, attr))
 
         elif inspect.isclass(attr):
             if attr_name.endswith(('Class', 'Private')):
@@ -534,11 +536,11 @@ def generate_module_stub(module):
                         attr_name))
                 continue
 
-            print(file=stub_str)
-            generate_class_stubs(attr, stub_str)
+            attr_stubs.append('')
+            attr_stubs.extend(generate_class_stubs(module, attr))
 
         elif isinstance(attr, (GObject.GType)):
-            print(format_variable(attr_name, attr), file=stub_str)
+            attr_stubs.append(format_variable(attr_name, attr))
 
         else:
             print("unsupported module-level type {} for {}.{}".format(
@@ -546,5 +548,5 @@ def generate_module_stub(module):
 
     stub_str = "\n".join(
         "import {}".format(imp) for imp in sorted(current_gi_imports)
-    ) + "\n" + stub_str.getvalue()
+    ) + "\n" + "\n".join(attr_stubs)
     return stub_str
