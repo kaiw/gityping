@@ -2,6 +2,8 @@ import collections
 import importlib
 from pathlib import Path
 
+import click
+
 from .const import MODULES
 from .gityping import generate_module_stub
 
@@ -44,8 +46,13 @@ def get_modules():
     return modules
 
 
-def main():
+@click.command()
+@click.argument('modules', default=None, nargs=-1)
+def main(modules):
     stub_base = Path('stubs')
-    for module in get_modules().values():
+    module_dict = get_modules()
+    if modules:
+        module_dict = {k: v for k, v in module_dict.items() if k in modules}
+    for module in module_dict.values():
         stub = generate_module_stub(module)
         write_to_stubs(module, stub, stub_base)
