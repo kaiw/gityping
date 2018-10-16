@@ -26,7 +26,10 @@ setup(
     packages=find_packages(exclude=['tests']),
     # We make no sense without gobject-introspection installed, but
     # can't validate that here.
-    install_requires=[],
+    install_requires=[
+      'click',
+      'pygobject',
+    ],
     entry_points={
         'console_scripts': [
             'gityping=gityping.main:main',
