@@ -359,21 +359,26 @@ def attr_generator(cls, attrs):
         yield attr_name, getattr(cls, attr_name)
 
 
+def generic_attr_stubber(cls, attr_name, attr, stub_out):
+    # Ordering is important here. We need to handle e.g., GFlags
+    # before we fall back to int/str/float.
+
+    if isinstance(attr, (VFuncInfo, FunctionInfo)):
+        stub_out(format_functioninfo(attr_name, attr))
+    elif isinstance(attr, (GObject.GFlags, GObject.GEnum)):
+        # TODO: unsure here. just annotate as the parent type? This is the
+        # same as below. Do I want this clause for clarity, or what?
+        stub_out(format_variable(attr_name, attr))
+    elif isinstance(attr, (int, str, float)):
+        stub_out(format_variable(attr_name, attr))
+    else:
+        print("unsupported type {} for {}.{}".format(
+            type(attr), format_cls_name(cls), attr_name))
+
+
 def generate_gobject_stubs(cls, attrs, stub_out):
     for attr_name, attr in attr_generator(cls, attrs):
-        # Ordering is important here. We need to handle e.g., GFlags
-        # before we fall back to int/str/float.
-        if isinstance(attr, (VFuncInfo, FunctionInfo)):
-            stub_out(format_functioninfo(attr_name, attr))
-        elif isinstance(attr, (GObject.GFlags, GObject.GEnum)):
-            # TODO: unsure here. just annotate as the parent type? This is the
-            # same as below. Do I want this clause for clarity, or what?
-            stub_out(format_variable(attr_name, attr))
-        elif isinstance(attr, (int, str, float)):
-            stub_out(format_variable(attr_name, attr))
-        else:
-            print("unsupported type {} for {}.{}".format(
-                type(attr), format_cls_name(cls), attr_name))
+        generic_attr_stubber(cls, attr_name, attr, stub_out)
 
 
 def generate_genum_stub(cls, attrs, stub_out):
