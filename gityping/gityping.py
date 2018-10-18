@@ -25,7 +25,7 @@ from gi.repository import GObject
 from .const import ATTR_IGNORE_LIST
 
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class GTypeTag(enum.IntEnum):

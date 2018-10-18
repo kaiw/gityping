@@ -1,5 +1,7 @@
 import collections
 import importlib
+import logging
+import logging.config
 from pathlib import Path
 
 import click
@@ -46,9 +48,38 @@ def get_modules():
     return modules
 
 
+def setup_logging(debug):
+    config = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'standard': {
+                'format': '[%(levelname)s] %(message)s',
+            },
+        },
+        'handlers': {
+            'default': {
+                'formatter': 'standard',
+                'class': 'logging.StreamHandler',
+            },
+        },
+        'loggers': {
+            '': {
+                'handlers': ['default'],
+                'level': logging.DEBUG if debug else logging.INFO,
+                'propagate': True,
+            },
+        }
+    }
+    logging.config.dictConfig(config)
+
+
 @click.command()
 @click.argument('modules', default=None, nargs=-1)
-def main(modules):
+@click.option('--debug', is_flag=True, default=False)
+def main(modules, debug):
+    setup_logging(debug)
+
     stub_base = Path('stubs')
     module_dict = get_modules()
     if modules:
