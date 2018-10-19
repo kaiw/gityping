@@ -365,7 +365,7 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
 
     if isinstance(attr, (VFuncInfo, FunctionInfo)):
         stub_out(format_functioninfo(attr_name, attr))
-    elif isinstance(attr, (GObject.GFlags, GObject.GEnum)):
+    elif isinstance(attr, (GObject.GType, GObject.GFlags, GObject.GEnum)):
         # TODO: unsure here. just annotate as the parent type? This is the
         # same as below. Do I want this clause for clarity, or what?
         stub_out(format_variable(attr_name, attr))
@@ -526,13 +526,9 @@ def generate_module_stub(module):
         # FIXME: there's way too much overlap here with
         # generate_gobject_stubs; this could be a lot simpler.
 
-        if isinstance(attr, (VFuncInfo, FunctionInfo, types.FunctionType)):
-            attr_stubs.append(format_functioninfo(attr_name, attr))
-
-        elif isinstance(attr, (int, str, float)):
-            attr_stubs.append(format_variable(attr_name, attr))
-
-        elif inspect.isclass(attr):
+        # FIXME: Ideally, generic_attr_stubber would handle classes as well,
+        # but this requires it to understand nesting for correct indentation.
+        if inspect.isclass(attr):
             if attr_name.endswith(('Class', 'Private')):
                 log.debug(
                     'Skipping GObject-style internal class {}'.format(
@@ -548,12 +544,8 @@ def generate_module_stub(module):
             attr_stubs.append('')
             attr_stubs.extend(generate_class_stubs(module, attr))
 
-        elif isinstance(attr, (GObject.GType)):
-            attr_stubs.append(format_variable(attr_name, attr))
-
         else:
-            print("unsupported module-level type {} for {}.{}".format(
-                type(attr), module.__name__, attr_name))
+            generic_attr_stubber(module, attr_name, attr, attr_stubs.append)
 
     stub_str = "\n".join(
         "import {}".format(imp) for imp in sorted(current_gi_imports)
