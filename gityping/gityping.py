@@ -394,17 +394,8 @@ def generate_genum_stub(cls, attrs, stub_out):
 
     for attr_name, attr in attr_generator(cls, attrs):
         if attr_name == 'LEVEL_MASK':
-            # So... here we are.
-            #
-            # Turns out that GFlags that include masks do maxint things
-            # except they're unsigned so when Python tries to convert
-            # them to C-style longs they're too small and... well...
-            #
-            # You'd think that you could catch this OverflowError,
-            # but... you'd be wrong. Don't ask me why; it looks like a
-            # Python bug, but I can't reproduce without pygobject so...
-            #
-            # Look, let's just assume that this is a valid flag.
+            # Handle OverflowError for GLib.LogLevelFlags.LEVEL_MASK;
+            # see GNOME/pygobject#269 for details.
             pass
         else:
             if not attr_name.isupper() or attr not in expected_values:
