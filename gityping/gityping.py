@@ -373,6 +373,12 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
 
     if isinstance(attr, (VFuncInfo, FunctionInfo)):
         stub_out(format_functioninfo(attr_name, attr))
+    elif (isinstance(attr, types.FunctionType) and
+            cls.__module__.startswith('gi.overrides')):
+        # This separately handles pure-Python override functions,
+        # although at the moment we don't do anything here because none
+        # of them have their own annotations.
+        stub_out(format_functioninfo(attr_name, attr))
     elif isinstance(attr, (GObject.GType, GObject.GFlags, GObject.GEnum)):
         # TODO: unsure here. just annotate as the parent type? This is the
         # same as below. Do I want this clause for clarity, or what?
