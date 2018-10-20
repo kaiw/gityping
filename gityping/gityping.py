@@ -381,6 +381,13 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
 
     annotations = typing.get_type_hints(cls)
 
+    # TODO: Consider whether we can remove our struct-specific stubber
+    # and just use this instead.
+    try:
+        cls_fields = {f.get_name(): f for f in cls.__info__.get_fields()}
+    except AttributeError:
+        cls_fields = {}
+
     if isinstance(attr, (VFuncInfo, FunctionInfo)):
         stub_out(format_functioninfo(attr_name, attr))
     elif (isinstance(attr, types.FunctionType) and
@@ -389,6 +396,8 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
         # although at the moment we don't do anything here because none
         # of them have their own annotations.
         stub_out(format_functioninfo(attr_name, attr))
+    elif attr_name in cls_fields:
+        stub_out(format_fieldinfo(attr_name, cls_fields[attr_name]))
     elif (isinstance(attr, property) and
             cls.__module__.startswith('gi.overrides')):
         stub_out(format_property(attr_name, attr, annotations))
