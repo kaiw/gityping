@@ -321,6 +321,14 @@ def format_variable(name, value):
     return "{} = ...  # type: {}".format(name, type_str)
 
 
+def format_property(name, value, annotations):
+    """Handle pure-Python property additions in overrides"""
+
+    annotation = annotations.get(name)
+    type_str = annotation.__name__ if annotation else typing.Any
+    return "{} = ...  # type: {}".format(name, type_str)
+
+
 def format_fieldinfo(attr_name, fieldinfo: FieldInfo):
     pytype = get_typeinfo(fieldinfo.get_type())
     return "{} = ...  # type: {}".format(attr_name, format_pytype(pytype))
@@ -371,6 +379,8 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
     # Ordering is important here. We need to handle e.g., GFlags
     # before we fall back to int/str/float.
 
+    annotations = typing.get_type_hints(cls)
+
     if isinstance(attr, (VFuncInfo, FunctionInfo)):
         stub_out(format_functioninfo(attr_name, attr))
     elif (isinstance(attr, types.FunctionType) and
@@ -379,6 +389,9 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
         # although at the moment we don't do anything here because none
         # of them have their own annotations.
         stub_out(format_functioninfo(attr_name, attr))
+    elif (isinstance(attr, property) and
+            cls.__module__.startswith('gi.overrides')):
+        stub_out(format_property(attr_name, attr, annotations))
     elif isinstance(attr, (GObject.GType, GObject.GFlags, GObject.GEnum)):
         # TODO: unsure here. just annotate as the parent type? This is the
         # same as below. Do I want this clause for clarity, or what?
