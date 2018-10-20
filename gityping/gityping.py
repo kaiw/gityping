@@ -300,6 +300,10 @@ def make_signature(function):
             return_annotation=return_type,
         )
     elif isinstance(function, types.FunctionType):
+        # FIXME: We could have a static method here, but at this point
+        # we don't have the necessary information to tell. We'd need to
+        # have the defining class here and then do e.g.,
+        #     isinstance(cls.__dict__['from_floats'], staticmethod)
         preamble = ""
         signature = inspect.signature(function)
     else:
