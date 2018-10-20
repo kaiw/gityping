@@ -2,6 +2,7 @@ import collections
 import importlib
 import logging
 import logging.config
+import sys
 from pathlib import Path
 
 import click
@@ -61,6 +62,7 @@ def setup_logging(debug):
             'default': {
                 'formatter': 'standard',
                 'class': 'logging.StreamHandler',
+                'stream': sys.stdout if debug else sys.stderr,
             },
         },
         'loggers': {
