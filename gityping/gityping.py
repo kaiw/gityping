@@ -262,7 +262,7 @@ def details_from_funcinfo(function):
 
     # TODO: Also handle getters, setters, etc.?
 
-    # `CallacbleInfo` doesn't have `is_method` or `is_constructor`,
+    # `CallableInfo` doesn't have `is_method` or `is_constructor`,
     # thus this exception handling.
     try:
         needs_self = isinstance(function, VFuncInfo) or function.is_method()
