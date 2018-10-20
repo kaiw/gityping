@@ -21,3 +21,12 @@ MODULES = (
     ('GdkPixbuf', '2.0'),
     ('cairo', '1.0'),
 )
+
+#: These are static bindings reimplemented in pygobject, and contain no
+#: (or mismatching) introspection information. The annotations for
+#: these will be either missing or incorrect.
+PYGI_STATIC_BINDINGS = {
+    'Error',
+    'OptionContext',
+    'OptionGroup',
+}

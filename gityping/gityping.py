@@ -22,7 +22,7 @@ from gi._gi import (
 from gi.module import IntrospectionModule
 from gi.repository import GObject
 
-from .const import ATTR_IGNORE_LIST
+from .const import ATTR_IGNORE_LIST, PYGI_STATIC_BINDINGS
 
 
 log = logging.getLogger(__name__)
@@ -356,7 +356,15 @@ def attr_generator(cls, attrs):
                 attr_name))
             continue
 
-        yield attr_name, getattr(cls, attr_name)
+        try:
+            yield attr_name, getattr(cls, attr_name)
+        except AttributeError as e:
+            # Silently skip errors from static binding classes. See the
+            # PYGI_STATIC_BINDINGS definition for details.
+            if cls.__name__ not in PYGI_STATIC_BINDINGS:
+                log.error(
+                    'Error generating attributes (possibly a new '
+                    'static binding): {}'.format(e))
 
 
 def generic_attr_stubber(cls, attr_name, attr, stub_out):
