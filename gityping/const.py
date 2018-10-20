@@ -19,7 +19,6 @@ MODULES = (
     ('GtkSource', '3.0'),
     ('Pango', '1.0'),
     ('GdkPixbuf', '2.0'),
-    ('cairo', '1.0'),
 )
 
 #: These are static bindings reimplemented in pygobject, and contain no
