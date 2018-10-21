@@ -7,6 +7,7 @@ import typing
 
 from gi._gi import (
     CallableInfo,
+    Direction,
     EnumInfo,
     FieldInfo,
     FunctionInfo,
@@ -228,7 +229,7 @@ def get_typeinfo(typeinfo: TypeInfo):
     return pytype
 
 
-def make_parameter(arg_info):
+def get_argument_info(arg_info):
     # TODO: We can't do this. The argument list is stateful because of
     # (at least) array length arguments, so we need to maintain some
     # state of the type parsing in between everything and return a
@@ -250,12 +251,7 @@ def make_parameter(arg_info):
     # types, this means that it might be from the override module or
     # similar, and won't have the module stripping that we apply
     # elsewhere.
-    return inspect.Parameter(
-        arg_info.get_name(),
-        annotation=type_annotation,
-        # TODO: I think this is actually true for gi... maybe?
-        kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
-    )
+    return arg_info.get_name(), type_annotation, arg_info.get_direction()
 
 
 def details_from_funcinfo(function):
@@ -285,9 +281,31 @@ def details_from_funcinfo(function):
             kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
         )
         parameters.append(self_param)
-    parameters.extend(make_parameter(a) for a in function.get_arguments())
 
-    return_type = get_typeinfo(function.get_return_type())
+    return_types = [get_typeinfo(function.get_return_type())]
+
+    for argument in function.get_arguments():
+        name, annotation, direction = get_argument_info(argument)
+        # FIXME: INOUT should possibly be treated differently here.
+        if direction in (Direction.IN, Direction.INOUT):
+            parameter = inspect.Parameter(
+                name,
+                annotation=annotation,
+                # TODO: I think this is actually true for gi... maybe?
+                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+            parameters.append(parameter)
+        else:
+            return_types.append(annotation)
+
+    if len(return_types) == 1:
+        return_type = return_types[0]
+    else:
+        # Remove None returns in a list; these are functions with OUT
+        # params that have gained a real Python return type.
+        return_types = [r for r in return_types if r is not None]
+        return_type_strs = [format_pytype(r) for r in return_types]
+        return_type = 'typing.Tuple[{}]'.format(', '.join(return_type_strs))
 
     return preamble, parameters, return_type
 
