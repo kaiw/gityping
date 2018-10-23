@@ -324,6 +324,15 @@ def make_signature(function):
         #     isinstance(cls.__dict__['from_floats'], staticmethod)
         preamble = ""
         signature = inspect.signature(function)
+
+        def sanitise_param_default(param):
+            if str(param.default).startswith('<'):
+                return param.replace(default=inspect.Parameter.empty)
+            return param
+        sanitised_params = [
+            sanitise_param_default(v) for v in signature.parameters.values()
+        ]
+        signature = signature.replace(parameters=sanitised_params)
     else:
         raise NotImplementedError
     return signature, preamble
