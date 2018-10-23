@@ -223,6 +223,11 @@ def get_typeinfo(typeinfo: TypeInfo):
         return "typing.List[{list_type}]".format(
             list_type=format_pytype(list_type))
 
+    if type_tag == GTypeTag.VOID and typeinfo.is_pointer():
+        # This is probably an opaque gpointer; we don't know anything
+        # about this, so mark it accordingly.
+        pytype = "typing.Any"
+
     if pytype is None and type_tag != GTypeTag.VOID:
         print("Incomplete tag mapping for {}".format(type_tag))
 
