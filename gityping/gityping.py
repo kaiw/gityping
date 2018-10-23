@@ -23,7 +23,11 @@ from gi._gi import (
 from gi.module import IntrospectionModule
 from gi.repository import GObject
 
-from .const import ATTR_IGNORE_LIST, PYGI_STATIC_BINDINGS
+from .const import (
+    ATTR_IGNORE_LIST,
+    PYGI_BOOL_OVERRIDE_FN,
+    PYGI_STATIC_BINDINGS,
+)
 
 
 log = logging.getLogger(__name__)
@@ -259,7 +263,7 @@ def get_argument_info(arg_info):
     return arg_info.get_name(), type_annotation, arg_info.get_direction()
 
 
-def details_from_funcinfo(function):
+def details_from_funcinfo(function, *, strip_bool_result=False):
 
     # TODO: Also handle getters, setters, etc.?
 
@@ -303,6 +307,15 @@ def details_from_funcinfo(function):
         else:
             return_types.append(annotation)
 
+    # If the function was wrapped with the strip_bool_result decorator
+    # then we just remove the first return type to emulate that.
+    if strip_bool_result:
+        if return_types[0] != bool:
+            raise RuntimeError('Tried to strip a non-boolean return type')
+        return_types = return_types[1:]
+        if not return_types:
+            raise RuntimeError('No returns left after boolean stripping')
+
     if len(return_types) == 1:
         return_type = return_types[0]
     else:
@@ -315,9 +328,10 @@ def details_from_funcinfo(function):
     return preamble, parameters, return_type
 
 
-def make_signature(function):
+def make_signature(function, *, strip_bool_result=False):
     if isinstance(function, CallableInfo):
-        preamble, parameters, return_type = details_from_funcinfo(function)
+        preamble, parameters, return_type = details_from_funcinfo(
+            function, strip_bool_result=strip_bool_result)
         signature = inspect.Signature(
             parameters=parameters,
             return_annotation=return_type,
@@ -370,11 +384,12 @@ def format_fieldinfo(attr_name, fieldinfo: FieldInfo):
     return "{} = ...  # type: {}".format(attr_name, format_pytype(pytype))
 
 
-def format_functioninfo(attr_name, func_info):
+def format_functioninfo(attr_name, func_info, *, strip_bool_result=False):
     assert isinstance(func_info, (VFuncInfo, FunctionInfo, types.FunctionType))
 
     try:
-        signature, preamble = make_signature(func_info)
+        signature, preamble = make_signature(
+            func_info, strip_bool_result=strip_bool_result)
     except Exception as e:
         raise ValueError(
             "couldn't make signature for {}: {}".format(attr_name, e))
@@ -424,7 +439,17 @@ def generic_attr_stubber(cls, attr_name, attr, stub_out):
     except AttributeError:
         cls_fields = {}
 
-    if isinstance(attr, (VFuncInfo, FunctionInfo)):
+    if isinstance(attr, types.FunctionType) and hasattr(attr, '__wrapped__'):
+        # FIXME: move this special handling elsewhere
+        if attr.__qualname__.startswith(PYGI_BOOL_OVERRIDE_FN):
+            fn_str = format_functioninfo(
+                attr_name, attr.__wrapped__, strip_bool_result=True)
+        else:
+            log.warn('Unhandled function wrapper {} for {}.{}'.format(
+                attr.__qualname__, format_cls_name(cls), attr_name))
+            fn_str = format_functioninfo(attr_name, attr.__wrapped__)
+        stub_out(fn_str)
+    elif isinstance(attr, (VFuncInfo, FunctionInfo)):
         stub_out(format_functioninfo(attr_name, attr))
     elif (isinstance(attr, types.FunctionType) and
             cls.__module__.startswith('gi.overrides')):

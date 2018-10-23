@@ -29,3 +29,5 @@ PYGI_STATIC_BINDINGS = {
     'OptionContext',
     'OptionGroup',
 }
+
+PYGI_BOOL_OVERRIDE_FN = 'strip_boolean_result'
