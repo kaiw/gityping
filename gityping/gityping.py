@@ -212,10 +212,11 @@ def get_typeinfo(typeinfo: TypeInfo):
         # TODO: pygobject removes length parameters associated with
         # arrays based on extra annotations. We don't yet handle this.
         if type_tag == TypeTag.ARRAY:
-            # FIXME: We should be able to get the array offset by using
-            # typeinfo.get_array_length(), though the docs aren't clear
-            # on how this is used.
-            log.info("Missing array length argument handling!")
+            # TODO: If the array has a length arg,
+            # typeinfo.get_array_length() gives it to us. However, we
+            # need this at a higher level.
+            if typeinfo.get_array_length() >= 0:
+                log.error("Missing array length argument handling!")
 
         # This is undocumented, but... appears correct?
         list_type = get_typeinfo(typeinfo.get_param_type(0))
