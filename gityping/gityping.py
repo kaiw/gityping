@@ -234,17 +234,6 @@ def get_typeinfo(typeinfo: TypeInfo):
     return pytype
 
 
-def get_argument_info(arg_info):
-    # TODO: We can't do this. The argument list is stateful because of
-    # (at least) array length arguments, so we need to maintain some
-    # state of the type parsing in between everything and return a
-    # reconstucted argument list at the end.
-
-    type_annotation = get_typeinfo(arg_info.get_type())
-
-    return arg_info.get_name(), type_annotation, arg_info.get_direction()
-
-
 def details_from_funcinfo(function, *, strip_bool_result=False):
 
     # TODO: Also handle getters, setters, etc.?
@@ -273,14 +262,20 @@ def details_from_funcinfo(function, *, strip_bool_result=False):
         )
         parameters.append(self_param)
 
+    # TODO: We can't do this. The argument list is stateful because of
+    # (at least) array length arguments, so we need to maintain some
+    # state of the type parsing in between everything and return a
+    # reconstucted argument list at the end.
+
     return_types = [get_typeinfo(function.get_return_type())]
 
     for argument in function.get_arguments():
-        name, annotation, direction = get_argument_info(argument)
+        annotation = get_typeinfo(argument.get_type())
+
         # FIXME: INOUT should possibly be treated differently here.
-        if direction in (Direction.IN, Direction.INOUT):
+        if argument.get_direction() in (Direction.IN, Direction.INOUT):
             parameter = inspect.Parameter(
-                name,
+                argument.get_name(),
                 annotation=annotation,
                 # TODO: I think this is actually true for gi... maybe?
                 kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
