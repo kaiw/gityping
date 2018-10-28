@@ -157,10 +157,6 @@ def get_typeinfo(typeinfo: TypeInfo):
     return values. As such, it doesn't handle all possible `TypeInfo`s.
     """
 
-    # TODO: It would be really nice to not be using the string
-    # syntax for these types, but might be more trouble than it's
-    # worth.
-
     type_tag = GTypeTag.from_typeinfo(typeinfo)
 
     if type_tag == GTypeTag.INTERFACE:
@@ -193,7 +189,6 @@ def get_typeinfo(typeinfo: TypeInfo):
             ]
             return_type = format_annotation(signature.return_annotation)
 
-            # TODO: I could make this not a string, but is it worth it?
             return "typing.Callable[[{arg_types}], {return_type}]".format(
                 arg_types=', '.join(a for a in args),
                 return_type=return_type,
