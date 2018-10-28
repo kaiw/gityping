@@ -229,7 +229,7 @@ def get_typeinfo(typeinfo: TypeInfo):
         pytype = "typing.Any"
 
     if pytype is None and type_tag != GTypeTag.VOID:
-        print("Incomplete tag mapping for {}".format(type_tag))
+        log.error("Incomplete tag mapping for {}".format(type_tag))
 
     return pytype
 
@@ -241,16 +241,6 @@ def get_argument_info(arg_info):
     # reconstucted argument list at the end.
 
     type_annotation = get_typeinfo(arg_info.get_type())
-
-    if type_annotation is None:
-        type_tag = GTypeTag.from_typeinfo(arg_info.get_type())
-        if type_tag != GTypeTag.VOID:
-            print(
-                "missing type annotation for {} {}; "
-                "built-in annotation was {}".format(
-                    type_tag,
-                    arg_info.get_name(),
-                    getattr(arg_info.get_container(), '__doc__', '')))
 
     # FIXME: At this point, type_annotation will be the class. For gi
     # types, this means that it might be from the override module or
