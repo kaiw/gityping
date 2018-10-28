@@ -242,10 +242,6 @@ def get_argument_info(arg_info):
 
     type_annotation = get_typeinfo(arg_info.get_type())
 
-    # FIXME: At this point, type_annotation will be the class. For gi
-    # types, this means that it might be from the override module or
-    # similar, and won't have the module stripping that we apply
-    # elsewhere.
     return arg_info.get_name(), type_annotation, arg_info.get_direction()
 
 
